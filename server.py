@@ -64,10 +64,6 @@ def boundaryBoxNew(img, contours):
     img_vung_chon = img[y:y + h, x:x + w].copy()
     return img_vung_chon
 
-@app.route('/')
-def index():
-    return render_template('index.html')
-
 @socketio.on('video_frame')
 def  handle_video_frame(frame_data):
     frame_bytes = base64.b64decode(frame_data)
