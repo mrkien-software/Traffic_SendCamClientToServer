@@ -7,11 +7,14 @@ from tensorflow import keras
 from PIL import Image
 import base64
 
-cap=cv2.VideoCapture(filename='ex1.mp4')
+cap=cv2.VideoCapture(0)
 # Load model biển báo
-model_path = "Traffic.h5"
+model_path = "Traffic_30_30.h5"
 loaded_model = tf.keras.models.load_model(model_path)
 
+def filteringImages(img):
+    img=cv2.GaussianBlur(img,(11,11),0)
+    return img
 # Chỉ lấy biển báo màu đỏ màu xanh lam
 def returnRedAndBlue(img):
 	yuv=cv2.cvtColor(img,cv2.COLOR_BGR2YUV)
@@ -40,6 +43,11 @@ def threshold(img,T=150):
 	_,img=cv2.threshold(img,T,255,cv2.THRESH_BINARY)
 	return img 
 
+def morphology(img,kernelSize=7):
+	kernel = np.ones((kernelSize,kernelSize),np.uint8)
+	opening = cv2.morphologyEx(img, cv2.MORPH_CLOSE, kernel)
+	return opening
+
 def findContour(img):
 	contours, hierarchy = cv2.findContours(img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
 	return contours
@@ -61,12 +69,41 @@ def boundaryBoxNew(img, contours):
     img_vung_chon = img[y:y + h, x:x + w].copy()
     return img_vung_chon
 
+def is_circle_or_triangle(img):
+    # Tìm đường viền trong ảnh đen trắng
+    contours, _ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Kiểm tra xem có phát hiện được đường viền nào không
+    if contours:
+        # Giả sử chỉ có đường viền lớn nhất là phù hợp
+        largest_contour = max(contours, key=cv2.contourArea)
+
+        # Xấp xỉ đường viền cho một đa giác
+        epsilon = 0.02 * cv2.arcLength(largest_contour, True)
+        approx = cv2.approxPolyDP(largest_contour, epsilon, True)
+
+        # hình có 3,4,5 cạnh cũng ghi nhận
+        if 2 < len(approx) < 6:
+            return 1
+        
+        # Check if the contour is approximately a circle
+        area = cv2.contourArea(largest_contour)
+        perimeter = cv2.arcLength(largest_contour, True)
+        circularity = 4 * np.pi * area / (perimeter ** 2)
+
+        if circularity > 0.6: #giống tầm 60% hình tròn
+            return 1
+    return 0
+
 while(True):
 	_, frame = cap.read()
+	img = filteringImages(frame)
 	#  Chuyển đổi hình ảnh sang không gian màu YUV và trả về kênh "v or v", nhấn mạnh vào màu đỏ và xanh của biển báo
-	img = returnRedAndBlue(frame)
+	img = returnRedAndBlue(img)
 	# Áp dụng ngưỡng nhị phân cho hình ảnh.
 	img = threshold(img,T = 150)
+	img=morphology(img,11)
+	checkBienBao = is_circle_or_triangle(img)
 	# Tìm đường viền trong ảnh nhị phân.
 	contours = findContour(img)
 	# Xác định đường viền lớn nhất trong danh sách các đường viền.
@@ -74,12 +111,12 @@ while(True):
 
 	if big is not None and cv2.contourArea(big) > 100:
 		img = boundaryBoxNew(frame,big) # cut những ảnh là biển báo khi quay video đi đường
-
-		# Lưu lại ảnh vào folder
-		current_time_ticks = int(time.time() * 1000)  # multiplying by 1000 to get milliseconds
-		filename = ""
-		filename = f"img/kien_{current_time_ticks}.jpg"
-		cv2.imwrite(filename, img)
+		if(checkBienBao == 1):
+			# Lưu lại ảnh vào folder
+			current_time_ticks = int(time.time() * 1000)  # multiplying by 1000 to get milliseconds
+			filename = ""
+			filename = f"img/bien_bao_{current_time_ticks}.jpg"
+			cv2.imwrite(filename, img)
 
 		# Show kết quả sai, lấy thử ảnh chạy tool xem chuẩn model.h5 chưa
 		# image = cv2.imread(filename)
@@ -158,9 +195,9 @@ while(True):
 		elif result == 32:
 			prediction = 'Tốc độ kết thúc + giới hạn vượt qua'
 		elif result == 33:
-			prediction = 'Rẽ phải'
+			prediction = 'Phía trước rẽ phải'
 		elif result == 34:
-			prediction = 'Rẽ trái'
+			prediction = 'Phía trước rẽ trái'
 		elif result == 35:
 			prediction = 'Đi thẳng phía trước'
 		elif result == 36:
